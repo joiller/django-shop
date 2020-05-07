@@ -201,6 +201,7 @@ class Transactions(models.Model):
     account = models.ForeignKey(Accounts, on_delete=models.CASCADE, db_column='account_id')
     category = models.IntegerField(blank=True, null=True)
     category_id = models.IntegerField(blank=True, null=True)
+    transaction_number = models.CharField(max_length=40,null=False)
     trans_id = models.CharField(
         max_length=20,
         default='no',

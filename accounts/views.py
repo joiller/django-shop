@@ -4,6 +4,7 @@ from .models import *
 import jwt
 from .utils import *
 from django.db import transaction, IntegrityError
+import uuid
 
 # Create your views here.
 
@@ -106,6 +107,7 @@ def purchase(request):
                                     volume=req_volume,
                                     account=acc,
                                     product=product,
+                                    transation_number=str(uuid.uuid4())
                                 )
                                 p.save()
 
@@ -147,17 +149,61 @@ def refund(request):
         if not acc:
             return JsonResponse(unlogged())
         transaction_id = request.POST['transaction_id']
+        t = TransactionsPoly.objects.get(id=transaction_id)
         try:
             with transaction.atomic():
-                transaction_ins = Transactions.objects.get(id=transaction_id)
-                purchase_ins = Purchases.objects.get(id=transaction_ins.category_id)
-                product_ins = Products.objects.get(id=purchase_ins.id)
-                product_ins.volume+=purchase_ins.volume
+                if type(t) == ChargesPoly:
+                    nt = t
+                    nt.status = 1  # 退款记录
+                    t.status = 2  # 原记录失效
+                    nt.save()
+                    t.save()
 
-                pur = PurchasesPoly.objects.filter()
+                    # 余额取消
+                    if acc.balance<t.amount:
+                        raise IntegrityError
+                    acc.balance -= t.amount
+                    acc.save()
+
+                    '''返还到卡'''
+
+                elif type(t) == PurchasesPoly:
+                    nt = t
+                    nt.status = 1
+                    t.status = 2
+                    nt.save()
+                    t.save()
+
+                    # 产品返还
+                    t.product.volume+=t.volume
+                    t.product.save()
+
+                elif type(t) == RefundsPoly:
+                    pass
+                elif type(t) == ExtractionsPoly:
+                    nt = t
+                    nt.status = 1  # 退款记录
+                    t.status = 2  # 原记录失效
+                    nt.save()
+                    t.save()
+
+                    # 余额取消
+                    if acc.balance < t.amount:
+                        raise IntegrityError
+                    acc.balance += t.amount
+                    acc.save()
+
+                    '''重新拿钱'''
 
         except IntegrityError:
             return JsonResponse(failed('IntegrityError'))
+
+        else:
+            return JsonResponse(
+                logged(
+
+                )
+            )
 
 
 def helper(request):
@@ -188,7 +234,8 @@ def charge(request):
                 c = ChargesPoly(
                     account=acc,
                     amount=amount,
-                    from_card=from_card
+                    from_card=from_card,
+                    transation_number=str(uuid.uuid4())
                 )
                 c.save()
         except IntegrityError as err:
@@ -226,7 +273,8 @@ def extract(request):
             e = ExtractionsPoly(
                 account=acc,
                 amount=amount,
-                to_card=to_card
+                to_card=to_card,
+                transation_number=str(uuid.uuid4())
             )
             e.save()
 
