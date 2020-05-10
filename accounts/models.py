@@ -15,7 +15,7 @@ from django.db.models import CASCADE
 class Accounts(models.Model):
     name = models.CharField(max_length=45, unique=True, null=False)
     password = models.CharField(max_length=16, null=False)
-    balance = models.FloatField(blank=True, null=True)
+    balance = models.FloatField(blank=True, null=True,default=0)
 
     def __str__(self):
         return self.name
@@ -229,6 +229,8 @@ class Transactions(models.Model):
 
 class TransactionsPoly(PolymorphicModel):
     account = models.ForeignKey(Accounts, on_delete=models.CASCADE)
+    created_at = models.DateField(auto_now_add=True)
+    updated_at = models.DateField(auto_now=True)
 
     class Meta:
         db_table = 'transactions_poly'

@@ -12,5 +12,8 @@ urlpatterns=[
     path('helper/',helper),
     path('charge/',charge),
     path('extract/',extract),
-    path('refund/',refund)
+    path('refund/',refund),
+    path('register/',register),
+    path('products/', products),
+    path('transactions/<int:category>/', transactions)
 ]

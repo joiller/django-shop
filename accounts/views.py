@@ -5,6 +5,7 @@ import jwt
 from .utils import *
 from django.db import transaction, IntegrityError
 import uuid
+from django.db.models.functions import Coalesce
 
 # Create your views here.
 
@@ -15,12 +16,97 @@ def home(req):
     return render(req, 'accounts/main.html')
 
 
-def products(req):
+def products(request):
+    if request.method == 'GET':
+        prods = Products.objects.all()
+        ps = list(map(lambda x: {
+            'id': x.id,
+            'name': x.name,
+            'price': x.price,
+            'volume': x.volume
+        }, prods))
+        print(dir(prods[0]))
+        return JsonResponse(success(
+            prods=ps
+        ))
     return HttpResponse('products')
+
+
+def transactions(request, category):
+    acc = identify_account(request)
+    if not acc:
+        return JsonResponse(unlogged())
+    categories = {
+        PurchasesPoly: 'purchase',
+        ChargesPoly: 'charge',
+        ExtractionsPoly: 'extraction'
+    }
+    if category == 0:
+        trans = TransactionsPoly.objects.filter(account=acc).order_by('-updated_at')
+
+        ts = list(map(
+            lambda x: {
+                'id': x.id,
+                'created_at': x.created_at,
+                'updated_at': x.updated_at,
+                'category': categories[x.get_real_instance_class()]
+            },trans
+        ))
+        return JsonResponse(success(
+            transactions=ts
+        ))
+    elif category == 1 or category==2 or category==3:
+        category = {
+            1: ChargesPoly,
+            2: PurchasesPoly,
+            3: ExtractionsPoly
+                    }[category]
+        trans = TransactionsPoly.objects.instance_of(category)\
+            .filter(account=acc).order_by('-updated_at')
+        ts = list(map(
+            lambda x: {
+                'id': x.id,
+                'created_at': x.created_at,
+                'updated_at': x.updated_at,
+                'category': categories[category]
+            }, trans
+        ))
+        return JsonResponse(success(
+            transactions=ts
+        ))
+    else:
+        pass
+
+    return HttpResponse(11)
 
 
 def accounts(req):
     return HttpResponse(str(req))
+
+
+def register(request):
+    if request.method == 'POST':
+        name = request.POST['name']
+        password = request.POST['password']
+        exists = Accounts.objects.filter(name=name)
+        if exists:
+            return JsonResponse(failed(
+                'UsernameExists'
+            ))
+        try:
+            with transaction.atomic():
+                acc = Accounts(
+                    name=name,
+                    password=password
+                )
+                acc.save()
+        except IntegrityError as err:
+            return JsonResponse(failed(
+                'DatabaseError'
+            ))
+        return JsonResponse(success(
+            name=acc.name
+        ))
 
 
 def login(request):
@@ -99,7 +185,7 @@ def purchase(request):
                                 acc.balance -= total
                                 acc.save()
 
-                                product.volume-=req_volume
+                                product.volume -= req_volume
                                 product.save()
 
                                 p = PurchasesPoly(
@@ -117,9 +203,9 @@ def purchase(request):
                                 #     account=acc
                                 # )
                                 # t.save()
-                                print('product:',product)
-                                print('account:',acc)
-                                print('purchase:',p)
+                                print('product:', product)
+                                print('account:', acc)
+                                print('purchase:', p)
                                 # print('t:',t)
 
                         except IntegrityError:
@@ -136,6 +222,10 @@ def purchase(request):
                                 amount=p.amount,
                                 product=p.product.name
                             ))
+            else:
+                return JsonResponse(failed(
+                    'NoSuchProduct'
+                ))
 
         else:
             return JsonResponse(unlogged(
@@ -144,7 +234,7 @@ def purchase(request):
 
 
 def refund(request):
-    if request.method=='POST':
+    if request.method == 'POST':
         acc = identify_account(request)
         if not acc:
             return JsonResponse(unlogged())
@@ -160,7 +250,7 @@ def refund(request):
                     t.save()
 
                     # 余额取消
-                    if acc.balance<t.amount:
+                    if acc.balance < t.amount:
                         raise IntegrityError
                     acc.balance -= t.amount
                     acc.save()
@@ -175,7 +265,7 @@ def refund(request):
                     t.save()
 
                     # 产品返还
-                    t.product.volume+=t.volume
+                    t.product.volume += t.volume
                     t.product.save()
 
                 elif type(t) == RefundsPoly:
@@ -208,27 +298,27 @@ def refund(request):
 
 def helper(request):
     p = ChargesPoly.objects.last()
-    print('amount:',p.amount)
-    print('id:',p.id)
+    print('amount:', p.amount)
+    print('id:', p.id)
     print(p.transactionspoly_ptr_id)
 
     return HttpResponse('okokok')
 
 
 def charge(request):
-    if request.method=='POST':
+    if request.method == 'POST':
         acc = identify_account(request)
         if not acc:
             print('noacc')
             return JsonResponse(unlogged())
         try:
             with transaction.atomic():
-                print('amount:',type(request.POST['amount']))
-                print('card:',type(request.POST['from_card']))
+                print('amount:', type(request.POST['amount']))
+                print('card:', type(request.POST['from_card']))
                 amount = float(request.POST['amount'])
                 from_card = request.POST['from_card']
 
-                acc.balance+=amount
+                acc.balance += amount
                 acc.save()
 
                 c = ChargesPoly(
@@ -260,14 +350,14 @@ def extract(request):
     amount = float(request.POST['amount'])
     to_card = request.POST['to_card']
 
-    if amount>acc.balance:
-        return  JsonResponse(failed(
+    if amount > acc.balance:
+        return JsonResponse(failed(
             'MoneyOut'
         ))
 
     try:
         with transaction.atomic():
-            acc.balance-=amount
+            acc.balance -= amount
             acc.save()
 
             e = ExtractionsPoly(
